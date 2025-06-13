@@ -2,7 +2,7 @@ default:
     just -l
 
 lint:
-    ruff check --fix
+    ruff check --select I --fix .
     ruff format
 
 run:
@@ -10,3 +10,6 @@ run:
 
 generate-circle-dataset:
     python -m generative_models.datasets.generate
+
+visualize-circle-dataset:
+    python -m streamlit run generative_models/datasets/visualize.py
