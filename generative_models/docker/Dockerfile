@@ -11,7 +11,8 @@ RUN apt-get update && apt-get install -y \
     libopenblas-dev \
     liblapack-dev \
     python-is-python3 \
-    curl
+    curl \
+    bash-completion
     
 RUN curl -LsSf https://astral.sh/uv/install.sh | sh
 ENV PATH="/root/.local/bin:$PATH"
@@ -44,8 +45,12 @@ RUN if getent passwd ${CONTAINER_UID} >/dev/null; then \
     # Configure sudoers
     echo "${CONTAINER_USER} ALL=(ALL) NOPASSWD:ALL" >> /etc/sudoers && \
     chmod 0440 /etc/sudoers
-    
 
-WORKDIR /workspace
+USER ${CONTAINER_USER}
+RUN curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh -s -- -y
+ENV PATH="/home/${CONTAINER_USER}/.cargo/bin:${PATH}"
+RUN cargo install just
+
+ENTRYPOINT ["generative_models/docker/entrypoint.sh"]
 
 CMD ["/bin/bash"]

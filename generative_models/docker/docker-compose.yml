@@ -15,12 +15,13 @@ services:
       - XAUTHORITY=/root/.Xauthority
     volumes:
       - /tmp/.X11-unix:/tmp/.X11-unix:rw
-      - ../:/workspace:rw
+      - ../../:/workspace:rw
     user: "${UID:-1000}:${GID:-1000}"
     working_dir: /workspace
     command: /bin/bash
     tty: true
     stdin_open: true
+    network_mode: host
     deploy:
       resources:
         reservations:

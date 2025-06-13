@@ -1,0 +1,9 @@
+{
+    "name": "Generative Models",
+    "dockerComposeFile": [ "../generative_models/docker/docker-compose.yml" ],
+    "service": "ai-experiments",
+    "workspaceFolder": "/workspace",
+    "runServices": [ "ai-experiments" ],
+    "extensions": [ "ms-azuretools.vscode-docker" ],
+    "forwardPorts": [ 3000 ]
+  }
