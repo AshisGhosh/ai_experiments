@@ -10,5 +10,6 @@ diffusers
 transformers
 accelerate
 datasets
+einops
 
 

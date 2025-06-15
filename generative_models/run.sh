@@ -21,7 +21,9 @@ done
 shift $((OPTIND-1))
 
 # enable x11 connection
-xhost +local:docker
+if [[ -z "${DISPLAY:-}" ]]; then
+  xhost +local:docker
+fi
 
 # select container
 SERVICE="ai-experiments"
@@ -41,4 +43,6 @@ cd $DOCKER_DIR && docker compose run --rm $SERVICE
 cd -
 
 # disable x11 connection
-xhost -local:docker
+if [[ -z "${DISPLAY:-}" ]]; then
+  xhost -local:docker
+fi
