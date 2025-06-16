@@ -3,6 +3,7 @@ import os
 import pickle
 from dataclasses import dataclass
 
+import einops
 import numpy as np
 import torch
 
@@ -40,6 +41,8 @@ def generate_circle_dataset(config: GenerateCircleDatasetConfig):
     points = torch.stack([x, y], dim=1)
     noise = torch.randn(points.shape, device=config.device) * config.noise_level
     points += noise
+
+    points = einops.rearrange(points, "b d n -> b n d")
 
     output_path = os.path.join(os.path.dirname(__file__), config.output_path)
     os.makedirs(os.path.dirname(output_path), exist_ok=True)

@@ -16,3 +16,6 @@ visualize-circle-dataset:
 
 train-ddpm:
     python -m generative_models.train_ddpm
+
+inference-ddpm:
+    python -m generative_models.inference_ddpm

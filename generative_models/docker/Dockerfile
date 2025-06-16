@@ -12,7 +12,8 @@ RUN apt-get update && apt-get install -y \
     liblapack-dev \
     python-is-python3 \
     curl \
-    bash-completion
+    bash-completion \
+    tmux
     
 RUN curl -LsSf https://astral.sh/uv/install.sh | sh
 ENV PATH="/root/.local/bin:$PATH"

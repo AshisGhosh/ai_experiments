@@ -18,3 +18,10 @@ def data_dir(dir_name: Optional[str] = None) -> Path:
     if dir_name is not None:
         data_dir = data_dir / dir_name
     return data_dir
+
+
+def checkpoints_dir(dir_name: Optional[str] = None) -> Path:
+    checkpoints_dir = generative_models_dir("checkpoints")
+    if dir_name is not None:
+        checkpoints_dir = checkpoints_dir / dir_name
+    return checkpoints_dir
