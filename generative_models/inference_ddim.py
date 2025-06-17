@@ -57,26 +57,36 @@ def inference():
     alpha = 1 - beta
     alpha_cumprod = torch.cumprod(alpha, dim=0).to(device)
 
+    eta = 0.2
+
     for t_idx in tqdm.tqdm(range(t_steps, 0, -1)):
         t = torch.tensor([t_idx - 1], device=device)
         t = einops.repeat(t, "1 -> 1 n 1", n=x_t.shape[1])
 
         # add batch dimension
         noise_t = model(x_t, t)
-        x_t_minus_1 = (
-            1
-            / torch.sqrt(alpha[t_idx - 1])
-            * (
-                x_t
-                - (1 - alpha[t_idx - 1])
-                / torch.sqrt(1 - alpha_cumprod[t_idx - 1])
-                * noise_t
-            )
-        )
+        a_bar = alpha_cumprod[t_idx - 1]
+        x_0_pred = (x_t - torch.sqrt(1 - a_bar) * noise_t) / torch.sqrt(a_bar)
+
         if t_idx > 1:
-            x_t_minus_1 = x_t_minus_1 + torch.randn_like(x_t_minus_1) * torch.sqrt(
-                beta[t_idx - 1]
-            )
+            a_bar_t_minus_1 = alpha_cumprod[t_idx - 2]
+        else:
+            a_bar_t_minus_1 = torch.ones_like(a_bar, device=device)
+
+        sigma_t = torch.sqrt((1 - a_bar_t_minus_1) / (1 - a_bar)) * eta
+        sigma_t = torch.clamp(
+            sigma_t, max=0.999
+        )  # Prevent sigma_t from getting too large
+
+        # Ensure the term under sqrt is positive
+        noise_scale = torch.sqrt(torch.clamp(1 - a_bar_t_minus_1 - sigma_t**2, min=0.0))
+        mean_t = torch.sqrt(a_bar_t_minus_1) * x_0_pred + noise_scale * noise_t
+
+        if eta > 0 and t_idx > 1:
+            x_t_minus_1 = mean_t + torch.randn_like(x_t) * sigma_t
+        else:
+            x_t_minus_1 = mean_t
+
         x_t = x_t_minus_1
         x_steps.append(einops.rearrange(x_t, "1 n d -> n d"))
 
