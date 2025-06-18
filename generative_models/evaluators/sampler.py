@@ -7,7 +7,7 @@ import tqdm
 from generative_models.schedulers import cosine_beta_schedule
 
 
-class DiffusionSampler:
+class DiffusionSampler(ABC):
     def __init__(self, model, t_steps, device):
         self.model = model
         self.t_steps = t_steps
@@ -92,6 +92,26 @@ class DDIMSampler(DiffusionSampler):
             else:
                 x_t_minus_1 = mean_t
 
+            x_t = x_t_minus_1
+            x_ts.append(x_t)
+        x_ts = torch.stack(x_ts, dim=0)
+        return x_t, x_ts
+
+
+class FlowSampler(DiffusionSampler):
+    def __init__(self, model, t_steps, device):
+        super().__init__(model, t_steps, device)
+
+    @torch.no_grad()
+    def sample(self, batch_size, num_points):
+        x_t = torch.randn(batch_size, num_points, 2, device=self.device)
+        x_ts = [x_t]
+        for t_idx in tqdm.tqdm(range(self.t_steps, 0, -1)):
+            t = torch.tensor([t_idx - 1], device=self.device)
+            t = einops.repeat(t, "1 -> b n 1", b=batch_size, n=num_points)
+
+            v_pred = self.model(x_t, t)
+            x_t_minus_1 = x_t - v_pred
             x_t = x_t_minus_1
             x_ts.append(x_t)
         x_ts = torch.stack(x_ts, dim=0)

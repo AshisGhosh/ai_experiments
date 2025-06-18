@@ -1,7 +1,7 @@
+import argparse
 from dataclasses import dataclass
 from pathlib import Path
 
-import einops
 import torch
 import torch.nn as nn
 import tqdm
@@ -9,14 +9,17 @@ from torch.optim.lr_scheduler import CosineAnnealingLR
 from torch.utils.data import DataLoader
 
 from generative_models.datasets import CircleDataset
-from generative_models.evaluators import DDPMSampler, Evaluator
+from generative_models.evaluators import DDPMSampler, Evaluator, FlowSampler
 from generative_models.models import (
     MLPConfig,
     PointWiseMLPDiffusion,
     PointWiseMLPDiffusionConfig,
 )
-from generative_models.objectives import DiffusionObjective, circularity_metric
-from generative_models.schedulers import cosine_beta_schedule
+from generative_models.objectives import (
+    DiffusionObjective,
+    FlowMatchingObjective,
+    circularity_metric,
+)
 from utils import checkpoints_dir, data_dir, determinism_over_performance, set_seed
 
 device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
@@ -30,6 +33,7 @@ class TrainingConfig:
     learning_rate: float = 3e-4
     t_steps: int = 100
     eval_every: int = 100
+    objective: str = "diffusion"
 
 
 class Trainer:
@@ -59,17 +63,27 @@ class Trainer:
         self.optimizer = torch.optim.Adam(
             self.model.parameters(), lr=config.learning_rate
         )
+        self.scheduler = CosineAnnealingLR(self.optimizer, T_max=config.num_epochs)
+
         self.criterion = nn.MSELoss().to(device)
-        self.objective = DiffusionObjective(
+
+        if config.objective == "diffusion":
+            objective_cls = DiffusionObjective
+            sampler_cls = DDPMSampler
+        elif config.objective == "flow_matching":
+            objective_cls = FlowMatchingObjective
+            sampler_cls = FlowSampler
+        else:
+            raise ValueError(f"Invalid objective: {config.objective}")
+
+        self.objective = objective_cls(
             model=self.model,
             criterion=self.criterion,
             device=device,
             t_steps=config.t_steps,
         )
 
-        self.scheduler = CosineAnnealingLR(self.optimizer, T_max=config.num_epochs)
-
-        self.sampler = DDPMSampler(self.model, config.t_steps, device)
+        self.sampler = sampler_cls(self.model, config.t_steps, device)
         self.evaluator = Evaluator(self.sampler, {"circularity": circularity_metric})
 
     def train(self):
@@ -106,9 +120,15 @@ class Trainer:
 
 
 def main():
+    parser = argparse.ArgumentParser()
+    parser.add_argument("--objective", type=str, default="diffusion")
+    args = parser.parse_args()
+
     set_seed(42)
     determinism_over_performance()
-    config = TrainingConfig()
+    config = TrainingConfig(objective=args.objective)
+    if args.objective == "flow_matching":
+        config.model_path = checkpoints_dir("flow_model.pth")
     trainer = Trainer(config)
     trainer.train()
 

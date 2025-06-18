@@ -14,8 +14,8 @@ generate-circle-dataset:
 visualize-circle-dataset:
     python -m streamlit run generative_models/datasets/visualize.py
 
-train:
-    python -m generative_models.train
+train OBJECTIVE='diffusion':
+    python -m generative_models.train --objective {{OBJECTIVE}}
 
-inference TYPE='ddpm':
-    python -m generative_models.inference -d {{TYPE}}
+inference SAMPLE_MODE='ddpm':
+    python -m generative_models.inference -s {{SAMPLE_MODE}}

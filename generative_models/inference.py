@@ -1,11 +1,13 @@
 import argparse
 import pickle
+from dataclasses import dataclass
+from pathlib import Path
 
 import einops
 import torch
 
 from generative_models.datasets import CircleDataset
-from generative_models.evaluators import DDIMSampler, DDPMSampler
+from generative_models.evaluators import DDIMSampler, DDPMSampler, FlowSampler
 from generative_models.models import (
     MLPConfig,
     PointWiseMLPDiffusion,
@@ -15,11 +17,17 @@ from utils import checkpoints_dir, data_dir
 
 device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
-DIFFUSION_MODES = {"ddpm": DDPMSampler, "ddim": DDIMSampler}
+SAMPLE_MODES = {"ddpm": DDPMSampler, "ddim": DDIMSampler, "flow": FlowSampler}
 
 
-def inference(diffusion_mode):
-    state_dict = torch.load(checkpoints_dir("ddpm_model.pth"), weights_only=True)
+@dataclass
+class InferenceConfig:
+    model_path: Path = checkpoints_dir("ddpm_model.pth")
+    sample_mode: str = "ddpm"
+
+
+def inference(config: InferenceConfig):
+    state_dict = torch.load(config.model_path, weights_only=True)
 
     # get dimensions from state dict
     state_dict_keys = list(state_dict.keys())
@@ -49,7 +57,7 @@ def inference(diffusion_mode):
     num_points = train_data.num_points_per_circle
 
     t_steps = 50
-    sampler = DIFFUSION_MODES[diffusion_mode](model, t_steps, device)
+    sampler = SAMPLE_MODES[config.sample_mode](model, t_steps, device)
 
     x_t, x_ts = sampler.sample(1, num_points)
     x_ts = einops.rearrange(x_ts, "t 1 n d -> t n d")
@@ -64,18 +72,20 @@ def main():
         prog="Inference", description="run inference on trained models"
     )
     parser.add_argument(
-        "-d",
-        "--diffusion_mode",
+        "-s",
+        "--sample_mode",
         default="ddpm",
-        help=f"One of {list(DIFFUSION_MODES.keys())}",
+        help=f"One of {list(SAMPLE_MODES.keys())}",
     )
     args = parser.parse_args()
 
-    assert args.diffusion_mode in DIFFUSION_MODES.keys(), (
-        f"Diffusion mode {args.diffusion_mode} not in {list(DIFFUSION_MODES.keys())}"
+    assert args.sample_mode in SAMPLE_MODES.keys(), (
+        f"Sample mode {args.sample_mode} not in {list(SAMPLE_MODES.keys())}"
     )
-
-    inference(args.diffusion_mode)
+    config = InferenceConfig(sample_mode=args.sample_mode)
+    if args.sample_mode == "flow":
+        config.model_path = checkpoints_dir("flow_model.pth")
+    inference(config)
 
 
 if __name__ == "__main__":
