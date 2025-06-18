@@ -1,8 +1,10 @@
+from pathlib import Path
+
 from generative_models.datasets import BaseDataset
 
 
 class CircleDataset(BaseDataset):
-    def __init__(self, data_path: str):
+    def __init__(self, data_path: Path):
         super().__init__(data_path)
         self._num_points_per_circle = None
 

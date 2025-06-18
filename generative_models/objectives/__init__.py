@@ -1,3 +1,4 @@
-from .circle_objective import determine_circularity
+from .diffusion import DiffusionObjective
+from .metrics import circularity_metric
 
-__all__ = ["determine_circularity"]
+__all__ = ["determine_circularity", "DiffusionObjective"]

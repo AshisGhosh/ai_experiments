@@ -1,10 +1,11 @@
 import pickle
+from pathlib import Path
 
 from torch.utils.data import Dataset
 
 
 class BaseDataset(Dataset):
-    def __init__(self, data_path: str):
+    def __init__(self, data_path: Path):
         self.data_path = data_path
         self._data = None
 

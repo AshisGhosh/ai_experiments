@@ -14,8 +14,8 @@ generate-circle-dataset:
 visualize-circle-dataset:
     python -m streamlit run generative_models/datasets/visualize.py
 
-train-ddpm:
-    python -m generative_models.train_ddpm
+train:
+    python -m generative_models.train
 
-inference-ddpm:
-    python -m generative_models.inference_ddpm
+inference TYPE='ddpm':
+    python -m generative_models.inference -d {{TYPE}}

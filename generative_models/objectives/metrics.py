@@ -2,7 +2,7 @@ import einops
 import torch
 
 
-def determine_circularity(points: torch.Tensor) -> torch.Tensor:
+def circularity_metric(points: torch.Tensor) -> torch.Tensor:
     """
     Determine how well the points fit a circle.
     """

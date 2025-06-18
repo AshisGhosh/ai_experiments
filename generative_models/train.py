@@ -1,4 +1,5 @@
 from dataclasses import dataclass
+from pathlib import Path
 
 import einops
 import torch
@@ -8,12 +9,13 @@ from torch.optim.lr_scheduler import CosineAnnealingLR
 from torch.utils.data import DataLoader
 
 from generative_models.datasets import CircleDataset
+from generative_models.evaluators import DDPMSampler, Evaluator
 from generative_models.models import (
     MLPConfig,
     PointWiseMLPDiffusion,
     PointWiseMLPDiffusionConfig,
 )
-from generative_models.objectives import determine_circularity
+from generative_models.objectives import DiffusionObjective, circularity_metric
 from generative_models.schedulers import cosine_beta_schedule
 from utils import checkpoints_dir, data_dir, determinism_over_performance, set_seed
 
@@ -22,7 +24,7 @@ device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
 @dataclass
 class TrainingConfig:
-    model_path: str = checkpoints_dir("ddpm_model.pth")
+    model_path: Path = checkpoints_dir("ddpm_model.pth")
     num_epochs: int = 2000
     batch_size: int = 128
     learning_rate: float = 3e-4
@@ -30,7 +32,7 @@ class TrainingConfig:
     eval_every: int = 100
 
 
-class DDPMTrainer:
+class Trainer:
     def __init__(self, config: TrainingConfig):
         self.config = config
         self.train_data = CircleDataset(data_dir("circle_dataset.pkl"))
@@ -58,33 +60,25 @@ class DDPMTrainer:
             self.model.parameters(), lr=config.learning_rate
         )
         self.criterion = nn.MSELoss().to(device)
+        self.objective = DiffusionObjective(
+            model=self.model,
+            criterion=self.criterion,
+            device=device,
+            t_steps=config.t_steps,
+        )
+
         self.scheduler = CosineAnnealingLR(self.optimizer, T_max=config.num_epochs)
 
-    def train(self):
-        t_steps = self.model_config.t_steps
-        beta = cosine_beta_schedule(t_steps, s=0.008)
-        alpha = 1 - beta
-        alpha_cumprod = torch.cumprod(alpha, dim=0).to(device)
+        self.sampler = DDPMSampler(self.model, config.t_steps, device)
+        self.evaluator = Evaluator(self.sampler, {"circularity": circularity_metric})
 
+    def train(self):
         for epoch in tqdm.trange(self.config.num_epochs, desc=f"Training"):
             epoch_loss = 0
             for batch in tqdm.tqdm(
                 self.train_loader, desc=f"Epoch {epoch}", disable=True
             ):
-                x = batch.to(device)
-
-                # create (B, 1) tensor of t_index
-                t = (torch.rand(x.shape[0], device=device) * (t_steps - 1)).long()
-                t = einops.repeat(t, "b -> b n 1", n=x.shape[1])
-                # shape: (B, n, 1)
-                a_bar = alpha_cumprod[t]
-
-                added_noise = torch.randn_like(x, device=device)
-                x_t = torch.sqrt(a_bar) * x + torch.sqrt(1 - a_bar) * added_noise
-
-                noise_guess = self.model(x_t, t)
-
-                loss = self.criterion(noise_guess, added_noise)
+                output, loss = self.objective.forward(batch)
                 self.optimizer.zero_grad()
                 loss.backward()
                 self.optimizer.step()
@@ -103,41 +97,10 @@ class DDPMTrainer:
     def evaluate(self):
         self.model.eval()
         try:
+            eval_batch_size = 64
             num_points = self.train_data.num_points_per_circle
-
-            batch_size = 64
-            x_t = torch.randn(batch_size, num_points, 2, device=device)
-
-            t_steps = 25
-            beta = cosine_beta_schedule(t_steps, s=0.008).to(device)
-            alpha = 1 - beta
-            alpha_cumprod = torch.cumprod(alpha, dim=0).to(device)
-
-            for t_idx in tqdm.tqdm(range(t_steps, 0, -1)):
-                t = torch.tensor([t_idx - 1], device=device)
-                t = einops.repeat(t, "1 -> b n 1", b=x_t.shape[0], n=x_t.shape[1])
-
-                # add batch dimension
-                noise_t = self.model(x_t, t)
-                x_t_minus_1 = (
-                    1
-                    / torch.sqrt(alpha[t_idx - 1])
-                    * (
-                        x_t
-                        - (1 - alpha[t_idx - 1])
-                        / torch.sqrt(1 - alpha_cumprod[t_idx - 1])
-                        * noise_t
-                    )
-                )
-                if t_idx > 1:
-                    x_t_minus_1 = x_t_minus_1 + torch.randn_like(
-                        x_t_minus_1
-                    ) * torch.sqrt(beta[t_idx - 1])
-                x_t = x_t_minus_1
-
-            circularity = determine_circularity(x_t)
-            print(f"Circularity: {circularity}")
-            return circularity
+            metrics = self.evaluator.evaluate(eval_batch_size, num_points=num_points)
+            print(metrics)
         finally:
             self.model.train()
 
@@ -146,7 +109,7 @@ def main():
     set_seed(42)
     determinism_over_performance()
     config = TrainingConfig()
-    trainer = DDPMTrainer(config)
+    trainer = Trainer(config)
     trainer.train()
 
 
