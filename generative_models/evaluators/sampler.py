@@ -116,3 +116,71 @@ class FlowSampler(DiffusionSampler):
             x_ts.append(x_t)
         x_ts = torch.stack(x_ts, dim=0)
         return x_t, x_ts
+
+
+class CircleSequenceSampler:
+    def __init__(self, model, device, dataset):
+        self.model = model
+        self.device = device
+        self.dataset = dataset
+
+    @torch.no_grad()
+    def sample(self, batch_size, num_points):
+        random_indices = torch.randint(0, len(self.dataset) - 1, (batch_size,))
+        rand_samples = self.dataset[random_indices].to(self.device)
+
+        lengths = torch.randint(1, num_points, (batch_size,), device=self.device)
+        seq_list = []
+        for i in range(batch_size):
+            seq_list.append(rand_samples[i, : lengths[i]])
+
+        generated = [seq.clone() for seq in seq_list]
+        generated_steps = []
+
+        while True:
+            if torch.all(lengths >= num_points):
+                break
+
+            seq_list = self.pad_to_max(generated, num_points)
+            generated_steps.append(seq_list.clone())
+            idx = torch.arange(num_points, device=self.device)
+            key_padding_mask = idx >= lengths.unsqueeze(1)
+            out = self.model(seq_list, key_padding_mask=key_padding_mask)
+
+            batch_indices = torch.arange(batch_size, device=self.device)
+            current_lengths = torch.clamp(lengths, max=num_points - 1)
+            next_points = out[batch_indices, current_lengths, :]
+
+            needs_points = lengths < num_points
+
+            generated = [
+                torch.cat([seq, next_points[i].unsqueeze(0)])
+                if needs_points[i]
+                else seq
+                for i, seq in enumerate(generated)
+            ]
+
+            lengths += 1
+
+        generated = torch.stack(generated)
+        generated_steps = torch.stack(generated_steps, dim=0).squeeze(1)
+        return generated, generated_steps
+
+    def pad_to_max(self, seq_list, max_length, pad_value=0.0) -> torch.Tensor:
+        padded_seqs = []
+        for seq in seq_list:
+            if len(seq) < max_length:
+                padded_seq = torch.cat(
+                    [
+                        seq,
+                        torch.full(
+                            (max_length - len(seq), seq.shape[1]),
+                            pad_value,
+                            device=seq.device,
+                        ),
+                    ]
+                )
+            else:
+                padded_seq = seq[:max_length]
+            padded_seqs.append(padded_seq)
+        return torch.stack(padded_seqs)

@@ -6,18 +6,30 @@ from pathlib import Path
 import einops
 import torch
 
-from generative_models.datasets import CircleDataset
-from generative_models.evaluators import DDIMSampler, DDPMSampler, FlowSampler
+from generative_models.datasets import CircleDataset, OrderedCircleDataset
+from generative_models.evaluators import (
+    CircleSequenceSampler,
+    DDIMSampler,
+    DDPMSampler,
+    FlowSampler,
+)
 from generative_models.models import (
     MLPConfig,
     PointWiseMLPDiffusion,
     PointWiseMLPDiffusionConfig,
+    Transformer,
+    TransformerConfig,
 )
 from utils import checkpoints_dir, data_dir
 
 device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
-SAMPLE_MODES = {"ddpm": DDPMSampler, "ddim": DDIMSampler, "flow": FlowSampler}
+SAMPLE_MODES = {
+    "ddpm": DDPMSampler,
+    "ddim": DDIMSampler,
+    "flow": FlowSampler,
+    "sequence": CircleSequenceSampler,
+}
 
 
 @dataclass
@@ -36,32 +48,48 @@ def inference(config: InferenceConfig):
     input_dim = state_dict[first_layer].shape[1]
     output_dim = state_dict[last_layer].shape[0]
 
-    mlp_config = MLPConfig(
-        input_dim=input_dim,
-        hidden_layers=[256, 256, 256],
-        output_dim=output_dim,
-        activation="relu",
-    )
-    model_config = PointWiseMLPDiffusionConfig(
-        mlp_config=mlp_config,
-        t_steps=50,
-    )
+    if config.sample_mode == "sequence":
+        model_config = TransformerConfig(
+            d_model=128,
+            n_heads=8,
+            n_layers=6,
+            d_ff=512,
+            dropout=0.1,
+        )
+        model = Transformer(config=model_config).to(device)
 
-    model = PointWiseMLPDiffusion(
-        config=model_config,
-    ).to(device)
+    else:
+        mlp_config = MLPConfig(
+            input_dim=input_dim,
+            hidden_layers=[256, 256, 256],
+            output_dim=output_dim,
+            activation="relu",
+        )
+        model_config = PointWiseMLPDiffusionConfig(
+            mlp_config=mlp_config,
+            t_steps=50,
+        )
+
+        model = PointWiseMLPDiffusion(
+            config=model_config,
+        ).to(device)
 
     model.load_state_dict(state_dict)
 
-    train_data = CircleDataset(data_dir("circle_dataset.pkl"))
+    if config.sample_mode == "sequence":
+        train_data = OrderedCircleDataset(data_dir("circle_dataset.pkl"))
+    else:
+        train_data = CircleDataset(data_dir("circle_dataset.pkl"))
     num_points = train_data.num_points_per_circle
 
     t_steps = 50
-    sampler = SAMPLE_MODES[config.sample_mode](model, t_steps, device)
-
-    x_t, x_ts = sampler.sample(1, num_points)
-    x_ts = einops.rearrange(x_ts, "t 1 n d -> t n d")
-    x_steps = x_ts.detach().cpu().numpy()
+    sampler = SAMPLE_MODES[config.sample_mode]
+    if config.sample_mode == "sequence":
+        sampler = sampler(model, device, train_data)
+    else:
+        sampler = sampler(model, t_steps, device)
+    x_t, x_steps = sampler.sample(1, num_points)
+    x_steps = x_steps.detach().cpu().numpy()
     with open(data_dir("x_steps.pkl"), "wb") as f:
         pickle.dump(x_steps, f)
     print(f"Saved x_steps to {data_dir('x_steps.pkl')}")
@@ -85,6 +113,8 @@ def main():
     config = InferenceConfig(sample_mode=args.sample_mode)
     if args.sample_mode == "flow":
         config.model_path = checkpoints_dir("flow_model.pth")
+    elif args.sample_mode == "sequence":
+        config.model_path = checkpoints_dir("transformer_model.pth")
     inference(config)
 
 

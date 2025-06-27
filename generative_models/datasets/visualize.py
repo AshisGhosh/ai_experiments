@@ -2,7 +2,7 @@ import einops
 import matplotlib.pyplot as plt
 import streamlit as st
 
-from generative_models.datasets import CircleDataset
+from generative_models.datasets import CircleDataset, OrderedCircleDataset
 from utils import data_dir
 
 st.title("Dataset Visualization")
@@ -10,7 +10,10 @@ st.title("Dataset Visualization")
 # dataset = CircleDataset(data_dir("circle_dataset.pkl"))
 dataset = CircleDataset(data_dir("x_steps.pkl"))
 
-idx = st.slider("Select circle", 0, len(dataset) - 1, 0)
+# dataset = OrderedCircleDataset(data_dir("circle_dataset.pkl"))
+
+idx = st.slider("Select circle", 0, max(1, len(dataset) - 1), 0)
+idx = min(idx, len(dataset) - 1)
 
 points = dataset[idx]
 points = einops.rearrange(points, "n d -> d n")

@@ -1,4 +1,10 @@
 from .evaluators import Evaluator
-from .sampler import DDIMSampler, DDPMSampler, FlowSampler
+from .sampler import CircleSequenceSampler, DDIMSampler, DDPMSampler, FlowSampler
 
-__all__ = ["Evaluator", "DDPMSampler", "DDIMSampler", "FlowSampler"]
+__all__ = [
+    "Evaluator",
+    "DDPMSampler",
+    "DDIMSampler",
+    "FlowSampler",
+    "CircleSequenceSampler",
+]
